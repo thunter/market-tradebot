@@ -114,15 +114,15 @@ public class TradeBot implements Callable<Integer> {
                         logger.debug("!!!!!!!!! - found sell trade " + o.getSymbol().toString() + " positionPrice:"
                                 + positionPrice + " tradePrice:" + tradePrice);
 
-                        if (tradePrice > positionPrice * 1.1) { // if price has increased 10% trigger a buy
+                        if (tradePrice < positionPrice * 0.9) { // if price has descreased 10% trigger a buy
                             /*
                              * DO SOMETHING!!! Create a new position and push it to the positions topic,
                              * possibley create a new trade
                              */
-                            /* Will only increase position by 10% */
-                            int numberToBuy = (int) (o.getPositionQuantity() * 0.1);
+                            /* Will only descrease position by 10% */
+                            int numberToSell = (int) (o.getPositionQuantity() * 0.1);
                             PositionAvro pa = new PositionAvro(o.getSymbol(), tradePrice,
-                                    o.getPositionQuantity() + numberToBuy, System.currentTimeMillis());
+                                    o.getPositionQuantity() - numberToSell, System.currentTimeMillis());
                             ProducerRecord<String, Object> record = new ProducerRecord<String, Object>(
                                     positionTopicName, opp.key(), pa);
                             logger.debug("!!!!!!!! - sending new position record!!!! " + record);
