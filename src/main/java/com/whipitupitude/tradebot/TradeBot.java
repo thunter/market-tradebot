@@ -6,6 +6,8 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.Callable;
@@ -29,6 +31,8 @@ import picocli.CommandLine.Option;
 
 public class TradeBot implements Callable<Integer> {
 
+    private DateTimeFormatter dateFmt = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+
     @Option(names = "--kafka.properties", description = "Path to kafka.properties files", defaultValue = "kafka.properties")
     private String kafkaConfig = "kafka.properties";
 
@@ -42,6 +46,11 @@ public class TradeBot implements Callable<Integer> {
         logger.warn("Hello Consuming Students of Kafka");
 
         logger.trace("Creating kafka config");
+
+        // 
+        // Create properties object
+        //
+
         Properties properties = new Properties();
         try {
             if (!Files.exists(Paths.get(kafkaConfig))) {
@@ -57,9 +66,11 @@ public class TradeBot implements Callable<Integer> {
             throw new RuntimeException(e);
         }
 
-        final Consumer<String, TradeOpportunityAvro> consumer = new KafkaConsumer<String, TradeOpportunityAvro>(
-                properties);
-        consumer.subscribe(Arrays.asList("trades.stream.opportunities"));
+        // Create Kafka Consumer with the properties from the Properties file - note that this is typed to return TradeOpportunityAvro
+        final Consumer<String, TradeOpportunityAvro> consumer = new KafkaConsumer<String, TradeOpportunityAvro>(properties);
+        // Subscribe the consumer to the topic that it will consumer from
+        consumer.subscribe(Arrays.asList("trades.stream.opportunities")); 
+        // As this also produces back into another topic, we create a producer here as well.
         final Producer<String, Object> producer = new KafkaProducer<>(properties);
 
         // Registering a shutdown hook so we can exit cleanly
@@ -78,13 +89,23 @@ public class TradeBot implements Callable<Integer> {
             }
         });
 
+        //
+        // Main Loop
+        //
+
         try {
             while (true) {
+
+                // poll the topic for 1 second and return any messages received
                 ConsumerRecords<String, TradeOpportunityAvro> opportunities = consumer.poll(Duration.ofMillis(1000));
-                logger.info("!!!!!! STARTING WHILE LOOP");
+
+                // Process each message received
                 for (ConsumerRecord<String, TradeOpportunityAvro> opp : opportunities) {
+
+                    // Get the opportunity object, which has the relevant values associated with it
                     TradeOpportunityAvro o = opp.value();
-                    logger.info("!!!!! - got opp " + opp);
+
+
                     if (o.getBuySell().toString().equals("B")) {
                         Double positionPrice = o.getPositionPrice();
                         Double tradePrice = o.getTradePrice();
@@ -100,7 +121,7 @@ public class TradeBot implements Callable<Integer> {
                             /* Will only increase position by 10% */
                             int numberToBuy = (int) (o.getPositionQuantity() * 0.1);
                             PositionAvro pa = new PositionAvro(o.getSymbol(), tradePrice,
-                                    o.getPositionQuantity() + numberToBuy, System.currentTimeMillis());
+                                    o.getPositionQuantity() + numberToBuy, dateFmt.format(LocalDateTime.now()));
                             ProducerRecord<String, Object> record = new ProducerRecord<String, Object>(
                                     positionTopicName, opp.key(), pa);
                             logger.debug("!!!!!!!! - sending new position record!!!! " + record);
@@ -122,7 +143,7 @@ public class TradeBot implements Callable<Integer> {
                             /* Will only descrease position by 10% */
                             int numberToSell = (int) (o.getPositionQuantity() * 0.1);
                             PositionAvro pa = new PositionAvro(o.getSymbol(), tradePrice,
-                                    o.getPositionQuantity() - numberToSell, System.currentTimeMillis());
+                                    o.getPositionQuantity() - numberToSell, dateFmt.format(LocalDateTime.now()));
                             ProducerRecord<String, Object> record = new ProducerRecord<String, Object>(
                                     positionTopicName, opp.key(), pa);
                             logger.debug("!!!!!!!! - sending new position record!!!! " + record);
@@ -140,6 +161,8 @@ public class TradeBot implements Callable<Integer> {
             consumer.close();
             System.out.println("Closed consumer and we are done");
         }
+
+        producer.close();
 
         return 0;
     }
